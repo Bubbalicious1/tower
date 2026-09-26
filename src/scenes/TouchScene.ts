@@ -10,6 +10,7 @@ export class TouchScene extends Phaser.Scene {
   private g!: Phaser.GameObjects.Graphics;
   private aLabel!: Phaser.GameObjects.Text;
   private bLabel!: Phaser.GameObjects.Text;
+  private menuLabel!: Phaser.GameObjects.Text;
 
   constructor() {
     super('Touch');
@@ -19,6 +20,7 @@ export class TouchScene extends Phaser.Scene {
     this.g = this.add.graphics();
     this.aLabel = makeText(this, 0, 0, 'A').setOrigin(0.5);
     this.bLabel = makeText(this, 0, 0, 'B').setOrigin(0.5);
+    this.menuLabel = makeText(this, 0, 0, 'MENU').setOrigin(0.5);
     this.input.addPointer(2);
   }
 
@@ -29,6 +31,7 @@ export class TouchScene extends Phaser.Scene {
     this.g.clear();
     this.aLabel.setVisible(show);
     this.bLabel.setVisible(show);
+    this.menuLabel.setVisible(show);
     if (!show) {
       controls.setTouch([]);
       return;
@@ -37,6 +40,7 @@ export class TouchScene extends Phaser.Scene {
     const pad = { x: 52, y: H - 52, r: 34 };
     const a = { x: W - 34, y: H - 60, r: 16 };
     const b = { x: W - 74, y: H - 32, r: 16 };
+    const menu = { x: W / 2 - 24, y: H - 20, w: 48, h: 14 };
 
     const active = new Set<Action>();
     for (const p of this.input.manager.pointers) {
@@ -51,6 +55,8 @@ export class TouchScene extends Phaser.Scene {
         active.add('confirm');
       } else if (Math.hypot(p.x - b.x, p.y - b.y) < b.r * 1.6) {
         active.add('cancel');
+      } else if (p.x >= menu.x - 6 && p.x <= menu.x + menu.w + 6 && p.y >= menu.y - 8 && p.y <= menu.y + menu.h + 8) {
+        active.add('menu');
       }
     }
     controls.setTouch(active);
@@ -80,6 +86,9 @@ export class TouchScene extends Phaser.Scene {
       g.fillStyle(color, active.has(action) ? 0.9 : 0.5);
       g.fillCircle(btn.x, btn.y, btn.r);
     }
+    g.fillStyle(0x000000, active.has('menu') ? 0.7 : 0.4);
+    g.fillRect(menu.x, menu.y, menu.w, menu.h);
+    this.menuLabel.setPosition(menu.x + menu.w / 2 + 1, menu.y + menu.h / 2 + 1);
     this.aLabel.setPosition(a.x + 1, a.y + 1);
     this.bLabel.setPosition(b.x + 1, b.y + 1);
   }

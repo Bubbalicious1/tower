@@ -87,7 +87,7 @@ export function generateArt(scene: Phaser.Scene): void {
   for (const cls of Object.values(CLASSES)) {
     spriteTexture(scene, `hero-${cls.id}`, SPRITES.hero, { ...PALETTE, c: cls.color });
   }
-  for (const id of Object.keys(ENEMIES)) spriteTexture(scene, `enemy-${id}`, SPRITES[id]);
+  for (const e of Object.values(ENEMIES)) if (!e.sprite) spriteTexture(scene, `enemy-${e.id}`, SPRITES[e.id]);
   spriteTexture(scene, 'chest', SPRITES.chest);
   spriteTexture(scene, 'chest-open', SPRITES.chestOpen);
   spriteTexture(scene, 'cursor', SPRITES.cursor);

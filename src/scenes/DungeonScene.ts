@@ -1,13 +1,14 @@
 import Phaser from 'phaser';
 import { TileGfx } from '../art';
 import { TILE } from '../config';
-import { rollGroup } from '../data/enemies';
+import { ENEMIES, rollGroup, spriteKey } from '../data/enemies';
+import { TOWNS } from '../data/world';
 import { generateFloor, Tile, type Floor, type Point } from '../dungeon/generate';
 import { restore } from '../game/party';
-import { descend, getState, saveGame } from '../game/state';
+import { claimBase, depthOf, descend, getState, isLastFloor, leaveDungeon, saveGame } from '../game/state';
 import { controls } from '../input/Controls';
 import { mulberry32, newSeed, pick, randInt, type Rng } from '../rng';
-import { drawWindow, makeText, YELLOW } from '../ui/widgets';
+import { drawWindow, makeText, Menu, YELLOW, type Widget } from '../ui/widgets';
 import type { BattleResult, BattleStart } from './BattleScene';
 
 type Dir = 'up' | 'down' | 'left' | 'right';
@@ -57,6 +58,10 @@ export class DungeonScene extends Phaser.Scene {
   private stepsSinceSave = 0;
   private hud!: Phaser.GameObjects.Graphics;
   private hudText: Phaser.GameObjects.Text[] = [];
+  /** Stairs on normal floors; the boss stands there on a dungeon's last floor. */
+  private hasStairs = true;
+  private boss: { x: number; y: number; sprite: Phaser.GameObjects.Image } | null = null;
+  private widget: Widget | null = null;
 
   constructor() {
     super('Dungeon');
@@ -70,12 +75,27 @@ export class DungeonScene extends Phaser.Scene {
     this.enemies = [];
     this.chests = [];
     this.hudText = [];
+    this.widget = null;
+    this.boss = null;
+    this.hasStairs = !isLastFloor(s);
     this.stepsSinceSave = 0;
     this.rng = mulberry32(newSeed());
     this.encounterSteps = 0;
     this.encounterAt = randInt(this.rng, 16, 30);
-    this.floor = generateFloor(s.seed, s.depth);
+    const depth = depthOf(s);
+    this.floor = generateFloor(s.seed, depth);
     this.buildMap();
+
+    const town = TOWNS[s.town];
+    const bossWaiting = !this.hasStairs && s.basesFound <= s.town;
+    if (bossWaiting) {
+      const boss = ENEMIES[town.boss];
+      const { x, y } = this.floor.stairs;
+      const sprite = this.add.image(px(x), px(y), spriteKey(boss)).setScale(1.5).setDepth(6);
+      if (boss.tint !== undefined) sprite.setTint(boss.tint);
+      this.tweens.add({ targets: sprite, scale: 1.7, duration: 600, yoyo: true, repeat: -1 });
+      this.boss = { x, y, sprite };
+    }
 
     this.floor.chests.forEach((p, idx) => {
       const opened = s.opened.includes(idx);
@@ -84,7 +104,7 @@ export class DungeonScene extends Phaser.Scene {
     });
     this.floor.enemies.forEach((p, idx) => {
       if (s.defeated.includes(idx)) return;
-      const group = rollGroup(this.rng, s.depth);
+      const group = rollGroup(this.rng, depth);
       const sprite = this.add.image(px(p.x), px(p.y), `enemy-${group[0]}`).setDepth(5);
       this.enemies.push({ idx, x: p.x, y: p.y, facing: pick(this.rng, ALL_DIRS), moving: false, stunnedUntil: 0, group, sprite });
     });
@@ -101,7 +121,7 @@ export class DungeonScene extends Phaser.Scene {
 
     this.hud = this.add.graphics().setScrollFactor(0).setDepth(100);
     this.refreshHud();
-    this.toast(`Floor ${s.depth}`);
+    this.toast(bossWaiting ? 'Something big is waiting...' : `${town.dungeon} ${s.floor}F`);
 
     this.time.addEvent({ delay: 400, loop: true, callback: () => this.enemyTick() });
 
@@ -118,7 +138,15 @@ export class DungeonScene extends Phaser.Scene {
   }
 
   update(): void {
+    if (this.widget) {
+      this.widget.update(controls);
+      return;
+    }
     if (this.busy || this.moving) return;
+    if (controls.justPressed('menu')) {
+      this.openMenu();
+      return;
+    }
     const dir = ALL_DIRS.find((d) => controls.isDown(d));
     if (dir) this.tryMove(dir);
   }
@@ -140,7 +168,7 @@ export class DungeonScene extends Phaser.Scene {
       }
       data.push(row);
     }
-    data[stairs.y][stairs.x] = TileGfx.Stairs;
+    if (this.hasStairs) data[stairs.y][stairs.x] = TileGfx.Stairs;
     const map = this.make.tilemap({ data, tileWidth: TILE, tileHeight: TILE });
     const tileset = map.addTilesetImage('tiles', 'tiles', TILE, TILE, 0, 0);
     if (!tileset) throw new Error('Tileset failed to load');
@@ -171,6 +199,10 @@ export class DungeonScene extends Phaser.Scene {
     const nx = this.tx + DIRS[dir].x;
     const ny = this.ty + DIRS[dir].y;
 
+    if (this.boss && this.boss.x === nx && this.boss.y === ny) {
+      this.startBattle(null, 'normal', true);
+      return;
+    }
     const enemy = this.enemyAt(nx, ny);
     if (enemy) {
       // Walking into an enemy's back earns the party a free round.
@@ -202,7 +234,7 @@ export class DungeonScene extends Phaser.Scene {
   private onStep(): void {
     const s = getState();
     const { stairs } = this.floor;
-    if (this.tx === stairs.x && this.ty === stairs.y) {
+    if (this.hasStairs && this.tx === stairs.x && this.ty === stairs.y) {
       this.goDownstairs();
       return;
     }
@@ -262,15 +294,17 @@ export class DungeonScene extends Phaser.Scene {
     }
   }
 
-  private startBattle(enemy: FieldEnemy | null, first: BattleStart['first']): void {
+  private startBattle(enemy: FieldEnemy | null, first: BattleStart['first'], boss = false): void {
     if (this.busy) return;
     this.busy = true;
     const s = getState();
+    const depth = depthOf(s);
     const data: BattleStart = {
-      group: enemy?.group ?? rollGroup(this.rng, s.depth),
-      depth: s.depth,
+      group: boss ? [TOWNS[s.town].boss] : (enemy?.group ?? rollGroup(this.rng, depth)),
+      depth,
       first,
       fieldEnemy: enemy?.idx ?? -1,
+      boss,
     };
     this.cameras.main.shake(200, 0.01);
     this.cameras.main.flash(250, 255, 255, 255);
@@ -286,6 +320,10 @@ export class DungeonScene extends Phaser.Scene {
     const s = getState();
     const now = this.time.now;
     const enemy = this.enemies.find((e) => e.idx === result.fieldEnemy);
+    if (result.outcome === 'victory' && result.boss) {
+      this.recoverBase();
+      return;
+    }
     if (result.outcome === 'victory' && enemy) {
       enemy.sprite.destroy();
       this.enemies = this.enemies.filter((e) => e !== enemy);
@@ -316,7 +354,7 @@ export class DungeonScene extends Phaser.Scene {
     chest.sprite.setTexture('chest-open');
     s.opened.push(chest.idx);
     if (this.rng() < 0.6) {
-      const gold = randInt(this.rng, 10, 25) * s.depth;
+      const gold = randInt(this.rng, 10, 25) * depthOf(s);
       s.gold += gold;
       this.toast(`Found ${gold} G!`);
     } else {
@@ -336,6 +374,50 @@ export class DungeonScene extends Phaser.Scene {
     });
   }
 
+  private recoverBase(): void {
+    const s = getState();
+    claimBase();
+    const found = s.basesFound;
+    const message =
+      found >= TOWNS.length
+        ? 'All four bases recovered! The Cosmic Baseball is whole again. The corporate All-Stars await... (To be continued!)'
+        : `You recovered base ${found} of ${TOWNS.length}! The road to ${TOWNS[found].name} is now open.`;
+    leaveDungeon();
+    this.scene.start('Town', { message });
+  }
+
+  private openMenu(): void {
+    this.busy = true;
+    controls.touchMode = 'menu';
+    const W = this.scale.width;
+    const g = this.add.graphics().setScrollFactor(0).setDepth(120);
+    drawWindow(g, W / 2 - 76, 96, 152, 40);
+    const close = () => {
+      menu.destroy();
+      g.destroy();
+      this.widget = null;
+      controls.touchMode = 'field';
+      this.busy = false;
+    };
+    const menu = new Menu(this, W / 2 - 66, 104, [{ label: 'Leave dungeon' }, { label: 'Close' }], {
+      width: 136,
+      onSelect: (i) => {
+        close();
+        if (i === 0) this.exitToTown();
+      },
+      onCancel: close,
+      fixedDepth: 121,
+    });
+    this.widget = menu;
+  }
+
+  private exitToTown(): void {
+    this.busy = true;
+    leaveDungeon();
+    this.cameras.main.fadeOut(300);
+    this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () => this.scene.start('Town'));
+  }
+
   /** Auto-save: called on floor entry, after battles, every few steps and when the app is backgrounded. */
   private persist(): void {
     const s = getState();
@@ -353,8 +435,9 @@ export class DungeonScene extends Phaser.Scene {
     const text = (x: number, y: number, str: string, color?: string) =>
       this.hudText.push(makeText(this, x, y, str, color).setScrollFactor(0).setDepth(101));
 
-    drawWindow(this.hud, 4, 4, 92, 30);
-    text(10, 10, `Floor ${s.depth}`);
+    const label = `${TOWNS[s.town].dungeon} ${s.floor}F`;
+    drawWindow(this.hud, 4, 4, label.length * 8 + 14, 30);
+    text(10, 10, label);
     text(10, 21, `${s.gold} G`, YELLOW);
 
     const pw = 112;

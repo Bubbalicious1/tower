@@ -80,8 +80,19 @@ FF1's six archetypes, re-themed as ball players (names are placeholders):
 | Pitcher | Black Mage | Offensive "magic" (pitches) | Fastball |
 | Utility | Red Mage | Jack of all trades | Changeup, Ice Pack |
 
-Classes will upgrade in some fashion later (FF1-style class change or something
-new; not designed yet).
+## Ranks (class upgrades)
+
+An **Old-Timer** in every town promotes the team, available at any time, once the
+party has won enough games (battles). His advice is always "keep practicing."
+
+| Rank | Wins needed | Stat bonus | Unlocks |
+|------|-------------|------------|---------|
+| Recreation | — | — | Starting skills |
+| Amateur | 10 | +10% | 1 new skill per class |
+| Semi-Pro | 25 | +20% | 1 new skill per class |
+| Professional | 50 | +35% | 1 new skill per class |
+
+The whole team is promoted together. Win counts and bonuses are first-pass numbers.
 
 ## Combat
 
@@ -90,10 +101,29 @@ new; not designed yet).
 - Commands: Attack, Magic/Skill, Item, Defend, Flee.
 - Front-view enemies, party shown as a row of sprites/portraits.
 
+## World structure
+
+Four towns (working names), each with a dungeon hiding one base of the Cosmic Baseball:
+
+| # | Town | Dungeon | Boss |
+|---|------|---------|------|
+| 1 | Hometown | Equipment Closet | Tarp Monster |
+| 2 | Riverbend | Flooded Park | Groundskeeper |
+| 3 | Ironworks | Foundry Field | Iron Mascot |
+| 4 | Capital City | Corporate Tower | Corp Enforcer |
+
+- A town is **locked** until the base from the previous town's dungeon is recovered.
+- The **world map** fast-travels to any unlocked town at any time.
+- Towns are menu-driven hubs: dungeon entrance, Inn, Shop, Old-Timer, World Map.
+- After all four bases: the corporate All-Stars finale (not built yet).
+
 ## Dungeons
 
-- Procedurally generated floors (rooms + corridors), seeded so a floor can be regenerated.
-- Stairs down to the next floor; boss floor every N floors; town/hub between runs.
+- 3 procedurally generated floors per town (rooms + corridors), seeded so a floor
+  can be regenerated. Difficulty continues from the previous town's dungeon.
+- The boss waits on the last floor, guarding the base. Boss fights can't be fled.
+- Cleared dungeons can be re-entered for grinding.
+- The field menu (Menu button) can leave the dungeon at any time.
 - Treasure chests, visible enemy groups that patrol/chase.
 
 ## Encounters
@@ -126,10 +156,13 @@ new; not designed yet).
 6. Auto-save.
 7. Placeholder SNES-style art from a free asset pack.
 
-## Built so far (skeleton)
+## Built so far
 
 - Title screen with story intro, New Game / Continue.
-- Endless procedurally generated floors (rooms + corridors, stairs, chests).
+- Four towns with Inn, Shop, Old-Timer; world map with locks and fast travel.
+- Rank promotions by win count, with new skills per rank.
+- 3-floor procedurally generated dungeons per town (rooms, corridors, stairs,
+  chests) with a boss guarding each base.
 - Visible enemies that wander and chase; first-strike / ambush from behind.
 - Capped random encounters in dark corridors (2 per floor).
 - Full turn-based battle loop: Attack / Skill / Item / Defend / Flee,
@@ -138,12 +171,12 @@ new; not designed yet).
 - Auto-save to localStorage.
 - Placeholder art generated in code (no image files yet).
 
-Not yet: party creation screen, town/shop/inn, boss floors, equipment,
-class upgrades, sound, real art, PWA offline caching, Capacitor builds.
+Not yet: party creation screen, walkable towns, equipment, the All-Stars finale,
+sound, real art, balance tuning, PWA offline caching, Capacitor builds.
 
 ## Open questions
 
-- Class upgrade system.
-- Real class names and party member names.
-- How the four bases structure the game (four regions? four bosses?).
+- Real class, town and party member names (working names for now).
+- What the All-Stars finale looks like.
+- Equipment: shop gear, dungeon loot, or both?
 - Final title.

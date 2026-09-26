@@ -53,12 +53,14 @@ export interface MenuOptions {
   rowH?: number;
   onSelect: (index: number) => void;
   onCancel?: () => void;
+  /** Pin to the screen (for menus over a scrolling map) and draw at this depth. */
+  fixedDepth?: number;
 }
 
 /** A vertical menu driven by any input device, with rows that can also be tapped. */
 export class Menu implements Widget {
   index = 0;
-  private objects: Phaser.GameObjects.GameObject[] = [];
+  private objects: (Phaser.GameObjects.Text | Phaser.GameObjects.Zone | Phaser.GameObjects.Image)[] = [];
   private cursor: Phaser.GameObjects.Image;
   private rowH: number;
 
@@ -85,6 +87,9 @@ export class Menu implements Widget {
     });
     this.cursor = scene.add.image(x + 1, 0, 'cursor').setOrigin(0, 0);
     this.objects.push(this.cursor);
+    if (opts.fixedDepth !== undefined) {
+      for (const o of this.objects) o.setScrollFactor(0).setDepth(opts.fixedDepth);
+    }
     this.placeCursor();
   }
 
@@ -123,4 +128,68 @@ export class Menu implements Widget {
     controls.consume();
     this.opts.onSelect(this.index);
   }
+}
+
+/** A scene that routes input to one focused widget at a time. */
+export interface WidgetHost {
+  widget: Widget | null;
+}
+
+interface Rect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/** Shows a menu inside a window and resolves with the chosen index (-1 if cancelled). */
+export function askMenu(
+  scene: Phaser.Scene,
+  host: WidgetHost,
+  frame: Rect,
+  items: MenuItem[],
+  cancellable = false,
+): Promise<number> {
+  return new Promise((resolve) => {
+    const win = scene.add.graphics();
+    drawWindow(win, frame.x, frame.y, frame.w, frame.h);
+    const done = (i: number) => {
+      menu.destroy();
+      win.destroy();
+      host.widget = null;
+      resolve(i);
+    };
+    const menu = new Menu(scene, frame.x + 6, frame.y + 8, items, {
+      width: frame.w - 12,
+      rowH: 13,
+      onSelect: done,
+      onCancel: cancellable ? () => done(-1) : undefined,
+    });
+    host.widget = menu;
+  });
+}
+
+/** Shows text in a window until the player confirms or taps. */
+export function showDialog(scene: Phaser.Scene, host: WidgetHost, frame: Rect, text: string): Promise<void> {
+  return new Promise((resolve) => {
+    const win = scene.add.graphics();
+    drawWindow(win, frame.x, frame.y, frame.w, frame.h);
+    const body = makeText(scene, frame.x + 8, frame.y + 8, text).setWordWrapWidth(frame.w - 24).setLineSpacing(5);
+    const more = makeText(scene, frame.x + frame.w - 8, frame.y + frame.h - 12, 'v', YELLOW).setOrigin(1, 0);
+    scene.tweens.add({ targets: more, alpha: 0, duration: 400, yoyo: true, repeat: -1 });
+    let ready = false;
+    scene.time.delayedCall(200, () => (ready = true));
+    const done = () => {
+      if (!ready) return;
+      scene.input.off('pointerdown', done);
+      win.destroy();
+      body.destroy();
+      more.destroy();
+      host.widget = null;
+      controls.consume();
+      resolve();
+    };
+    host.widget = { update: (c) => c.justPressed('confirm') && done() };
+    scene.input.on('pointerdown', done);
+  });
 }

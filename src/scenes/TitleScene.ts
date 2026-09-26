@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { hasSave, loadGame, newGame } from '../game/state';
+import { getState, hasSave, loadGame, newGame } from '../game/state';
 import { controls } from '../input/Controls';
 import { mulberry32 } from '../rng';
 import { drawWindow, GRAY, makeText, Menu, YELLOW, type Widget } from '../ui/widgets';
@@ -63,7 +63,7 @@ export class TitleScene extends Phaser.Scene {
         if (i === 0) void this.startNewGame();
         else {
           loadGame();
-          this.scene.start('Dungeon');
+          this.scene.start(getState().inDungeon ? 'Dungeon' : 'Town');
         }
       },
     });
@@ -94,7 +94,10 @@ export class TitleScene extends Phaser.Scene {
       text.setText(page);
       await this.waitAdvance();
     }
-    this.scene.start('Dungeon');
+    this.scene.start('Town', {
+      message:
+        "Old-Timer: So the Riddler left you something in the equipment closet, eh? He always said that closet went deeper than it looked...",
+    });
   }
 
   /** Resolves on confirm or a tap, ignoring input for a moment so one press can't skip two pages. */

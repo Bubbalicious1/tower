@@ -21,6 +21,8 @@ export interface ClassDef {
   base: Stats;
   growth: Stats;
   skills: SkillId[];
+  /** One new skill for each promotion: Amateur, Semi-Pro, Professional. */
+  rankSkills: [SkillId, SkillId, SkillId];
 }
 
 export const CLASSES: Record<ClassId, ClassDef> = {
@@ -32,6 +34,7 @@ export const CLASSES: Record<ClassId, ClassDef> = {
     base: { maxHp: 38, maxMp: 4, atk: 9, def: 6, mag: 1, spd: 4 },
     growth: { maxHp: 7, maxMp: 1, atk: 3, def: 2, mag: 0, spd: 1 },
     skills: ['powerSwing'],
+    rankSkills: ['lineDrive', 'grandSlam', 'walkOff'],
   },
   stealer: {
     id: 'stealer',
@@ -41,6 +44,7 @@ export const CLASSES: Record<ClassId, ClassDef> = {
     base: { maxHp: 28, maxMp: 6, atk: 7, def: 4, mag: 2, spd: 10 },
     growth: { maxHp: 5, maxMp: 1, atk: 2, def: 1, mag: 0, spd: 2 },
     skills: ['pickoff'],
+    rankSkills: ['doubleSteal', 'squeezePlay', 'stealHome'],
   },
   catcher: {
     id: 'catcher',
@@ -50,6 +54,7 @@ export const CLASSES: Record<ClassId, ClassDef> = {
     base: { maxHp: 42, maxMp: 4, atk: 7, def: 8, mag: 1, spd: 3 },
     growth: { maxHp: 8, maxMp: 1, atk: 2, def: 3, mag: 0, spd: 1 },
     skills: ['mittSmash'],
+    rankSkills: ['tagOut', 'blockPlate', 'ironMitt'],
   },
   trainer: {
     id: 'trainer',
@@ -59,6 +64,7 @@ export const CLASSES: Record<ClassId, ClassDef> = {
     base: { maxHp: 26, maxMp: 14, atk: 3, def: 3, mag: 8, spd: 5 },
     growth: { maxHp: 4, maxMp: 3, atk: 1, def: 1, mag: 2, spd: 1 },
     skills: ['icePack'],
+    rankSkills: ['stretch', 'rubDirt', 'miracleCure'],
   },
   pitcher: {
     id: 'pitcher',
@@ -68,6 +74,7 @@ export const CLASSES: Record<ClassId, ClassDef> = {
     base: { maxHp: 24, maxMp: 16, atk: 3, def: 3, mag: 10, spd: 6 },
     growth: { maxHp: 4, maxMp: 3, atk: 1, def: 1, mag: 3, spd: 1 },
     skills: ['fastball'],
+    rankSkills: ['curveball', 'slider', 'heater'],
   },
   utility: {
     id: 'utility',
@@ -77,5 +84,6 @@ export const CLASSES: Record<ClassId, ClassDef> = {
     base: { maxHp: 32, maxMp: 10, atk: 6, def: 5, mag: 6, spd: 6 },
     growth: { maxHp: 6, maxMp: 2, atk: 2, def: 1, mag: 1, spd: 1 },
     skills: ['changeup', 'icePack'],
+    rankSkills: ['knuckleball', 'stretch', 'slider'],
   },
 };

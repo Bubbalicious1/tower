@@ -1,6 +1,5 @@
 import Phaser from 'phaser';
-import { CLASSES } from '../data/classes';
-import { ENEMIES, scaledStats, type EnemyDef } from '../data/enemies';
+import { ENEMIES, scaledStats, spriteKey, type EnemyDef } from '../data/enemies';
 import { SKILLS, type SkillKind } from '../data/skills';
 import {
   applyDamage,
@@ -15,7 +14,7 @@ import {
   type Fighter,
   type Hit,
 } from '../game/combat';
-import { gainXp, type Member } from '../game/party';
+import { gainXp, skillsFor, type Member } from '../game/party';
 import { getState } from '../game/state';
 import { controls } from '../input/Controls';
 import { mulberry32, newSeed, pick, type Rng } from '../rng';
@@ -28,11 +27,14 @@ export interface BattleStart {
   first: 'party' | 'enemy' | 'normal';
   /** Index of the field enemy that started this battle, or -1 for a random encounter. */
   fieldEnemy: number;
+  /** Boss battles guard a base and can't be fled. */
+  boss: boolean;
 }
 
 export interface BattleResult {
   outcome: 'victory' | 'defeat' | 'fled';
   fieldEnemy: number;
+  boss: boolean;
 }
 
 interface PartyFighter extends Fighter {
@@ -124,7 +126,8 @@ export class BattleScene extends Phaser.Scene {
       const n = seen.get(id) ?? 0;
       seen.set(id, n + 1);
       const suffix = (counts.get(id) ?? 0) > 1 ? ` ${String.fromCharCode(65 + n)}` : '';
-      const sprite = this.add.image(0, ENEMY_Y, `enemy-${id}`).setScale(3).setInteractive();
+      const sprite = this.add.image(0, ENEMY_Y, spriteKey(enemy)).setScale(enemy.boss ? 4 : 3).setInteractive();
+      if (enemy.tint !== undefined) sprite.setTint(enemy.tint);
       const f: EnemyFighter = {
         key: `e${i}`,
         name: enemy.name + suffix,
@@ -241,7 +244,7 @@ export class BattleScene extends Phaser.Scene {
       8,
       BOTTOM_Y + 8,
       CMD_W - 8,
-      [{ label: 'Attack' }, { label: 'Skill' }, { label: 'Item', right: String(drinks), enabled: drinks > 0 }, { label: 'Defend' }, { label: 'Flee' }],
+      [{ label: 'Attack' }, { label: 'Skill' }, { label: 'Item', right: String(drinks), enabled: drinks > 0 }, { label: 'Defend' }, { label: 'Flee', enabled: !this.setup.boss }],
       canGoBack,
     );
     switch (choice) {
@@ -252,7 +255,7 @@ export class BattleScene extends Phaser.Scene {
         return target && { kind: 'attack', actor, target };
       }
       case 1: {
-        const skills = CLASSES[actor.member.classId].skills.map((id) => SKILLS[id]);
+        const skills = skillsFor(actor.member).map((id) => SKILLS[id]);
         const si = await this.menu(
           8,
           BOTTOM_Y + 8,
@@ -381,7 +384,8 @@ export class BattleScene extends Phaser.Scene {
     this.highlight(null);
     this.writeBack();
     s.gold += gold;
-    await this.say(`Victory! ${xp} XP and ${gold} G.`);
+    s.wins++;
+    await this.say(`Victory! ${xp} XP and ${gold} G.  Wins: ${s.wins}`);
     // FF1-style: XP is split among the members still standing.
     const share = Math.ceil(xp / Math.max(1, standing.length));
     for (const p of standing) {
@@ -420,7 +424,7 @@ export class BattleScene extends Phaser.Scene {
   private finish(outcome: BattleResult['outcome'], writeBack = true): void {
     if (writeBack) this.writeBack();
     this.widget = null;
-    const result: BattleResult = { outcome, fieldEnemy: this.setup.fieldEnemy };
+    const result: BattleResult = { outcome, fieldEnemy: this.setup.fieldEnemy, boss: this.setup.boss };
     this.cameras.main.fadeOut(200);
     this.cameras.main.once(Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE, () => {
       this.scene.wake('Dungeon', result);
@@ -540,8 +544,9 @@ export class BattleScene extends Phaser.Scene {
     this.orderIcons = order.map((f, i) => ({
       key: f.key,
       icon: this.add
-        .image(58 + i * 18, 7, f.side === 'party' ? `hero-${f.member.classId}` : `enemy-${f.enemy.id}`)
-        .setOrigin(0, 0),
+        .image(58 + i * 18, 7, f.side === 'party' ? `hero-${f.member.classId}` : spriteKey(f.enemy))
+        .setOrigin(0, 0)
+        .setTint(f.side === 'enemy' && f.enemy.tint !== undefined ? f.enemy.tint : 0xffffff),
     }));
   }
 

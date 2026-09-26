@@ -19,6 +19,11 @@ export interface EnemyDef {
   /** Shallowest dungeon floor this enemy appears on. */
   minDepth: number;
   skill?: EnemySkill;
+  /** Bosses guard a town's base; they never appear in random groups. */
+  boss?: boolean;
+  /** Reuse another enemy's sprite (placeholder art), optionally tinted. */
+  sprite?: string;
+  tint?: number;
 }
 
 export const ENEMIES: Record<string, EnemyDef> = {
@@ -56,7 +61,59 @@ export const ENEMIES: Record<string, EnemyDef> = {
     minDepth: 3,
     skill: { name: 'Mascot Slam', kind: 'phys', power: 1.5, chance: 0.25 },
   },
+
+  // Bosses. minDepth matches the dungeon's last floor, so they aren't scaled up.
+  tarp: {
+    id: 'tarp',
+    name: 'Tarp Monster',
+    stats: { maxHp: 130, maxMp: 0, atk: 11, def: 5, mag: 9, spd: 4 },
+    xp: 60,
+    gold: 60,
+    minDepth: 3,
+    skill: { name: 'Rain Delay', kind: 'mag', power: 1, chance: 0.3 },
+    boss: true,
+    sprite: 'brute',
+    tint: 0x8090e0,
+  },
+  keeper: {
+    id: 'keeper',
+    name: 'Groundskeeper',
+    stats: { maxHp: 240, maxMp: 0, atk: 17, def: 9, mag: 12, spd: 7 },
+    xp: 150,
+    gold: 140,
+    minDepth: 6,
+    skill: { name: 'Sprinkler', kind: 'mag', power: 1.2, chance: 0.35 },
+    boss: true,
+    sprite: 'scout',
+    tint: 0x80e090,
+  },
+  ironMascot: {
+    id: 'ironMascot',
+    name: 'Iron Mascot',
+    stats: { maxHp: 380, maxMp: 0, atk: 25, def: 15, mag: 0, spd: 6 },
+    xp: 300,
+    gold: 260,
+    minDepth: 9,
+    skill: { name: 'Mascot Slam', kind: 'phys', power: 1.6, chance: 0.3 },
+    boss: true,
+    sprite: 'brute',
+    tint: 0xb0b0c0,
+  },
+  enforcer: {
+    id: 'enforcer',
+    name: 'Corp Enforcer',
+    stats: { maxHp: 540, maxMp: 0, atk: 31, def: 19, mag: 24, spd: 10 },
+    xp: 500,
+    gold: 400,
+    minDepth: 12,
+    skill: { name: 'Hostile Takeover', kind: 'mag', power: 1.4, chance: 0.35 },
+    boss: true,
+    sprite: 'scout',
+    tint: 0xf07070,
+  },
 };
+
+export const spriteKey = (e: EnemyDef): string => `enemy-${e.sprite ?? e.id}`;
 
 /** Enemies get ~12% tougher per floor below the one they first appear on. */
 export function scaledStats(def: EnemyDef, depth: number): Stats {
@@ -74,7 +131,7 @@ export function scaledStats(def: EnemyDef, depth: number): Stats {
 
 /** Roll an enemy group (list of enemy ids) appropriate for a floor. */
 export function rollGroup(rng: Rng, depth: number): string[] {
-  const pool = Object.values(ENEMIES).filter((e) => e.minDepth <= depth);
+  const pool = Object.values(ENEMIES).filter((e) => !e.boss && e.minDepth <= depth);
   const size = randInt(rng, 1, Math.min(4, 2 + Math.floor(depth / 2)));
   return Array.from({ length: size }, () => pick(rng, pool).id);
 }

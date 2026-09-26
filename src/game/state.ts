@@ -1,15 +1,23 @@
 import type { ClassId } from '../data/classes';
+import { FLOORS_PER_DUNGEON, TOWNS } from '../data/world';
 import type { Point } from '../dungeon/generate';
 import { newSeed } from '../rng';
-import { createMember, type Member } from './party';
+import { createMember, statsAt, type Member } from './party';
 
 export interface SaveData {
-  version: 1;
+  version: 2;
   party: Member[];
   gold: number;
   items: { drink: number };
-  /** Current dungeon floor (1-based). Progress persists between sessions. */
-  depth: number;
+  /** Battles won in total; the Old-Timer promotes the team at set win counts. */
+  wins: number;
+  /** Bases recovered (0-4). Town N is unlocked once N bases have been found. */
+  basesFound: number;
+  /** Current (or last visited) town index. */
+  town: number;
+  inDungeon: boolean;
+  /** Floor of the current town's dungeon (1-based). */
+  floor: number;
   /** Seed of the current floor; regenerating from it rebuilds the same layout. */
   seed: number;
   pos: Point | null;
@@ -39,11 +47,15 @@ export function getState(): SaveData {
 
 export function newGame(): SaveData {
   current = {
-    version: 1,
+    version: 2,
     party: DEFAULT_PARTY.map(([name, cls]) => createMember(name, cls)),
     gold: 0,
     items: { drink: 3 },
-    depth: 1,
+    wins: 0,
+    basesFound: 0,
+    town: 0,
+    inDungeon: false,
+    floor: 1,
     seed: newSeed(),
     pos: null,
     defeated: [],
@@ -54,13 +66,34 @@ export function newGame(): SaveData {
   return current;
 }
 
+/** Upgrade older saves in place so players never lose progress to a format change. */
+export function migrate(data: { version: number } & Record<string, unknown>): SaveData | null {
+  if (data.version === 2) return data as unknown as SaveData;
+  if (data.version !== 1) return null;
+  const v1 = data as unknown as Omit<SaveData, 'version' | 'wins' | 'basesFound' | 'town' | 'inDungeon' | 'floor'>;
+  const party = v1.party.map((m) => ({ ...m, rank: 0, stats: statsAt(m.classId, m.level, 0) }));
+  return {
+    ...v1,
+    version: 2,
+    party,
+    wins: 0,
+    basesFound: 0,
+    town: 0,
+    inDungeon: false,
+    floor: 1,
+    pos: null,
+    defeated: [],
+    opened: [],
+    encounters: 0,
+  };
+}
+
 export function loadGame(): SaveData | null {
   try {
     const raw = localStorage.getItem(SAVE_KEY);
     if (!raw) return null;
-    const data = JSON.parse(raw) as SaveData;
-    if (data.version !== 1) return null;
-    current = data;
+    const data = migrate(JSON.parse(raw));
+    if (data) current = data;
     return data;
   } catch {
     return null;
@@ -84,13 +117,54 @@ export function saveGame(): void {
   }
 }
 
-export function descend(): void {
-  const s = getState();
-  s.depth++;
+/** Overall difficulty: each town's dungeon continues where the last one ended. */
+export function depthOf(s: SaveData): number {
+  return s.town * FLOORS_PER_DUNGEON + s.floor;
+}
+
+export function isLastFloor(s: SaveData): boolean {
+  return s.floor >= FLOORS_PER_DUNGEON;
+}
+
+export function isTownUnlocked(s: SaveData, town: number): boolean {
+  return town <= s.basesFound && town < TOWNS.length;
+}
+
+function resetFloor(s: SaveData): void {
   s.seed = newSeed();
   s.pos = null;
   s.defeated = [];
   s.opened = [];
   s.encounters = 0;
+}
+
+export function enterDungeon(): void {
+  const s = getState();
+  s.inDungeon = true;
+  s.floor = 1;
+  resetFloor(s);
   saveGame();
+}
+
+export function descend(): void {
+  const s = getState();
+  s.floor++;
+  resetFloor(s);
+  saveGame();
+}
+
+export function leaveDungeon(): void {
+  const s = getState();
+  s.inDungeon = false;
+  s.pos = null;
+  saveGame();
+}
+
+/** Records the current town's base; returns true if it was newly found. */
+export function claimBase(): boolean {
+  const s = getState();
+  const isNew = s.basesFound <= s.town;
+  if (isNew) s.basesFound = s.town + 1;
+  saveGame();
+  return isNew;
 }

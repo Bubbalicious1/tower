@@ -24,7 +24,7 @@ sideways.
 | Move    | Arrows / WASD       | D-pad / stick  | On-screen D-pad  |
 | Confirm | Z / Enter / Space   | A (Cross)      | A button / tap   |
 | Cancel  | X / Esc / Backspace | B (Circle)     | B button         |
-| Speed   | C / Tab (in battle) | Start / Y      | Tap the `x1`     |
+| Menu / battle speed | C / Tab     | Start / Y      | MENU button / tap `x1` |
 
 ## Scripts
 
@@ -35,9 +35,9 @@ sideways.
 
 ## Code map
 
-- `src/scenes/` — Title, Dungeon (field), Battle, Touch overlay
+- `src/scenes/` — Title, Town, WorldMap, Dungeon (field), Battle, Touch overlay
 - `src/dungeon/generate.ts` — seeded floor generator
 - `src/game/` — combat math, party/levelling, save state
-- `src/data/` — classes, skills, enemies
+- `src/data/` — classes, skills, enemies, towns and ranks (`world.ts`)
 - `src/input/Controls.ts` — keyboard/gamepad/touch → abstract actions
 - `src/art-data.ts` — placeholder pixel art as text maps
