@@ -1,6 +1,8 @@
 import { CLASSES, type ClassId, type Stats } from '../data/classes';
+import type { Item, Slot } from '../data/equipment';
 import type { SkillId } from '../data/skills';
 import { RANKS } from '../data/world';
+import { effectiveStats } from './equipment';
 
 export interface Member {
   name: string;
@@ -12,7 +14,9 @@ export interface Member {
   rank: number;
   hp: number;
   mp: number;
+  /** Level and rank stats, before equipment. */
   stats: Stats;
+  equip: Partial<Record<Slot, Item>>;
 }
 
 export function statsAt(classId: ClassId, level: number, rank = 0): Stats {
@@ -32,7 +36,7 @@ export function statsAt(classId: ClassId, level: number, rank = 0): Stats {
 
 export function createMember(name: string, classId: ClassId): Member {
   const stats = statsAt(classId, 1);
-  return { name, classId, level: 1, xp: 0, rank: 0, hp: stats.maxHp, mp: stats.maxMp, stats };
+  return { name, classId, level: 1, xp: 0, rank: 0, hp: stats.maxHp, mp: stats.maxMp, stats, equip: {} };
 }
 
 export function xpToNext(level: number): number {
@@ -78,6 +82,7 @@ export function winsToNextRank(rank: number, wins: number): number | null {
 }
 
 export function restore(m: Member): void {
-  m.hp = m.stats.maxHp;
-  m.mp = m.stats.maxMp;
+  const eff = effectiveStats(m);
+  m.hp = eff.maxHp;
+  m.mp = eff.maxMp;
 }

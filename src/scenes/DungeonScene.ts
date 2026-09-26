@@ -4,6 +4,9 @@ import { TILE } from '../config';
 import { ENEMIES, rollGroup, spriteKey } from '../data/enemies';
 import { TOWNS } from '../data/world';
 import { generateFloor, Tile, type Floor, type Point } from '../dungeon/generate';
+import { RARITY_COLOR } from '../data/equipment';
+import { CONSUMABLE_IDS, CONSUMABLES, type ConsumableId } from '../data/items';
+import { BAG_SIZE, effectiveStats, itemName, rollLoot } from '../game/equipment';
 import { restore } from '../game/party';
 import { claimBase, depthOf, descend, getState, isLastFloor, leaveDungeon, saveGame } from '../game/state';
 import { controls } from '../input/Controls';
@@ -350,17 +353,29 @@ export class DungeonScene extends Phaser.Scene {
 
   private openChest(chest: Chest): void {
     const s = getState();
-    chest.opened = true;
-    chest.sprite.setTexture('chest-open');
-    s.opened.push(chest.idx);
-    if (this.rng() < 0.6) {
+    const roll = this.rng();
+    if (roll < 0.45) {
+      // Gear: deeper floors and later towns roll better tiers and rarities.
+      if (s.bag.length >= BAG_SIZE) {
+        this.toast('Gear inside, but your bag is full!');
+        return; // Leave the chest closed so the player can come back.
+      }
+      const item = rollLoot(this.rng, s, s.town, s.floor);
+      s.bag.push(item);
+      this.toast(`${item.rarity === 'legendary' ? 'LEGENDARY! ' : ''}Found ${itemName(item)}!`, RARITY_COLOR[item.rarity]);
+    } else if (roll < 0.75) {
       const gold = randInt(this.rng, 10, 25) * depthOf(s);
       s.gold += gold;
       this.toast(`Found ${gold} G!`);
     } else {
-      s.items.drink++;
-      this.toast('Found a Sports Drink!');
+      const pool = CONSUMABLE_IDS.filter((id) => CONSUMABLES[id].minTown <= s.town + 1);
+      const id: ConsumableId = pool[Math.floor(this.rng() * pool.length)];
+      s.items[id]++;
+      this.toast(`Found ${CONSUMABLES[id].name}!`);
     }
+    chest.opened = true;
+    chest.sprite.setTexture('chest-open');
+    s.opened.push(chest.idx);
     this.refreshHud();
     this.persist();
   }
@@ -391,7 +406,7 @@ export class DungeonScene extends Phaser.Scene {
     controls.touchMode = 'menu';
     const W = this.scale.width;
     const g = this.add.graphics().setScrollFactor(0).setDepth(120);
-    drawWindow(g, W / 2 - 76, 96, 152, 40);
+    drawWindow(g, W / 2 - 76, 90, 152, 53);
     const close = () => {
       menu.destroy();
       g.destroy();
@@ -399,16 +414,29 @@ export class DungeonScene extends Phaser.Scene {
       controls.touchMode = 'field';
       this.busy = false;
     };
-    const menu = new Menu(this, W / 2 - 66, 104, [{ label: 'Leave dungeon' }, { label: 'Close' }], {
+    const menu = new Menu(this, W / 2 - 66, 98, [{ label: 'Equipment' }, { label: 'Leave dungeon' }, { label: 'Close' }], {
       width: 136,
       onSelect: (i) => {
         close();
-        if (i === 0) this.exitToTown();
+        if (i === 0) this.openEquipment();
+        else if (i === 1) this.exitToTown();
       },
       onCancel: close,
       fixedDepth: 121,
     });
     this.widget = menu;
+  }
+
+  private openEquipment(): void {
+    this.busy = true;
+    this.events.once('resume', () => {
+      controls.touchMode = 'field';
+      this.busy = false;
+      this.refreshHud();
+      this.persist();
+    });
+    this.scene.launch('Equip', { from: 'Dungeon' });
+    this.scene.pause();
   }
 
   private exitToTown(): void {
@@ -446,7 +474,7 @@ export class DungeonScene extends Phaser.Scene {
     s.party.forEach((m, i) => {
       const y = 9 + i * 11;
       text(x0 + 6, y, m.name.slice(0, 6));
-      const ratio = m.hp / m.stats.maxHp;
+      const ratio = m.hp / effectiveStats(m).maxHp;
       this.hud.fillStyle(0x101020);
       this.hud.fillRect(x0 + 60, y + 2, 46, 4);
       this.hud.fillStyle(ratio > 0.5 ? 0x70f070 : ratio > 0.25 ? 0xf8d848 : 0xf86060);
@@ -454,12 +482,12 @@ export class DungeonScene extends Phaser.Scene {
     });
   }
 
-  private toast(message: string): void {
+  private toast(message: string, color?: string): void {
     const W = this.scale.width;
     const w = message.length * 8 + 20;
     const g = this.add.graphics().setScrollFactor(0).setDepth(110);
     drawWindow(g, Math.round(W / 2 - w / 2), 44, w, 20);
-    const t = makeText(this, Math.round(W / 2), 50, message).setOrigin(0.5, 0).setScrollFactor(0).setDepth(111);
+    const t = makeText(this, Math.round(W / 2), 50, message, color).setOrigin(0.5, 0).setScrollFactor(0).setDepth(111);
     this.time.delayedCall(1500, () => {
       g.destroy();
       t.destroy();

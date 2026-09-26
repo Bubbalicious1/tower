@@ -101,6 +101,58 @@ The whole team is promoted together. Win counts and bonuses are first-pass numbe
 - Commands: Attack, Magic/Skill, Item, Defend, Flee.
 - Front-view enemies, party shown as a row of sprites/portraits.
 
+## Equipment
+
+**Slots:** Bat/Ball (weapon), Glove, Cleats, Cap. Gear is **class-restricted**:
+
+| Gear | Who |
+|------|-----|
+| Bats | Slugger, Base Stealer, Catcher, Utility |
+| Balls | Pitcher, Utility |
+| Kits | Trainer |
+| Catcher's Mitts (heavy gloves) | Catcher |
+| Gloves, Cleats, most Caps | Everyone |
+
+- **Tiers:** each town's shop sells its tier (and the one before). Tier 3 needs
+  Amateur, tier 4 needs Semi-Pro (Old-Timer ranks).
+- **Loot:** chests and bosses drop random gear. Deeper floors and later towns roll
+  higher tiers and more Rares. **Rare** ("Fine ...") = +30% stats and a random
+  bonus stat. Bosses always drop Rare or better.
+- **Legendary:** unique items named after legends of the game, each with a special
+  effect. Found deep in dungeons (last floors) and from bosses (30%).
+
+| Legendary | Slot | Special |
+|-----------|------|---------|
+| Babe's Bat | Bat | Crits far more often |
+| Satchel's Ball | Ball | +3 MP per round |
+| Clemente's Kit | Kit | Heals 50% more |
+| Iron Horse Glove | Glove | +5% HP per round |
+| Yogi's Mitt | Catcher's Mitt | Halves magic damage |
+| Jackie's Cleats | Cleats | Always acts first |
+| Say Hey Cap | Cap | +25% gold |
+
+  ⚠️ These use real players' names. Fine for a hobby project; before selling, they
+  need licensing from the estates or renaming (all names live in `src/data/equipment.ts`).
+- **Bag:** 30 unequipped items. Full bag = gear chests stay closed until you make room.
+- **Selling:** half price (Rares sell for more). Legendaries ask for confirmation.
+- **Equipping:** from the town menu or the dungeon field menu, with live stat
+  comparisons and **Optimize** (per player or whole team).
+- **Icons** in menus; sprites don't change with gear (yet).
+- Later: "sponsored" corporate gear with strong stats and a catch.
+
+## Consumables
+
+| Item | Effect | First sold in |
+|------|--------|---------------|
+| Sports Drink | +40 HP | Hometown |
+| Sunflower Seeds | +15 MP | Hometown |
+| Pine Tar | ATK ×1.5 for the battle | Riverbend |
+| Smelling Salts | Revive with 25% HP | Riverbend |
+| Water Cooler | +30 HP to everyone | Ironworks |
+
+Usable in battle. (Using items from the field menu: not yet.)
+The bases give no passive bonuses.
+
 ## World structure
 
 Four towns (working names), each with a dungeon hiding one base of the Cosmic Baseball:
@@ -161,6 +213,9 @@ Four towns (working names), each with a dungeon hiding one base of the Cosmic Ba
 - Title screen with story intro, New Game / Continue.
 - Four towns with Inn, Shop, Old-Timer; world map with locks and fast travel.
 - Rank promotions by win count, with new skills per rank.
+- Equipment: 4 slots, class/rank restrictions, shop tiers, random Common/Rare
+  loot, legendary items with specials, bag, selling, Optimize.
+- Five consumables with different effects.
 - 3-floor procedurally generated dungeons per town (rooms, corridors, stairs,
   chests) with a boss guarding each base.
 - Visible enemies that wander and chase; first-strike / ambush from behind.
@@ -171,12 +226,12 @@ Four towns (working names), each with a dungeon hiding one base of the Cosmic Ba
 - Auto-save to localStorage.
 - Placeholder art generated in code (no image files yet).
 
-Not yet: party creation screen, walkable towns, equipment, the All-Stars finale,
+Not yet: party creation screen, walkable towns, field item use, the All-Stars finale,
 sound, real art, balance tuning, PWA offline caching, Capacitor builds.
 
 ## Open questions
 
 - Real class, town and party member names (working names for now).
 - What the All-Stars finale looks like.
-- Equipment: shop gear, dungeon loot, or both?
+- Legendary names before any commercial release.
 - Final title.

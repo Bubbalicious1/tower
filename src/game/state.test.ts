@@ -7,11 +7,20 @@ describe('save state', () => {
     const m = createMember('Rocco', 'slugger');
     const { rank: _rank, ...v1Member } = { ...m, level: 4 };
     const v2 = migrate({ version: 1, party: [v1Member], gold: 55, items: { drink: 2 }, depth: 5, seed: 1, pos: null, defeated: [], opened: [], encounters: 0 });
-    expect(v2?.version).toBe(2);
+    expect(v2?.version).toBe(3);
+    expect(v2?.items.drink).toBe(2);
+    expect(v2?.items.salts).toBe(0);
+    expect(v2?.party[0].equip.weapon?.def).toBe('bat1');
     expect(v2?.gold).toBe(55);
     expect(v2?.party[0].level).toBe(4);
     expect(v2?.party[0].rank).toBe(0);
     expect(v2?.town).toBe(0);
+  });
+
+  it('gives new games starter weapons', () => {
+    const s = newGame();
+    expect(s.party.map((m) => m.equip.weapon?.def)).toEqual(['bat1', 'bat1', 'kit1', 'ball1']);
+    expect(new Set(s.party.map((m) => m.equip.weapon?.uid)).size).toBe(4);
   });
 
   it('rejects unknown versions', () => {

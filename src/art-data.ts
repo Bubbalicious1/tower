@@ -129,6 +129,14 @@ export const SPRITES: Record<string, string[]> = {
     '..kbbbbbbbbbbk..',
     '..kkkkkkkkkkkk..',
   ],
+  // 8x8 item icons.
+  'icon-bat': ['.......k', '......kb', '.....kbk', '....kbk.', '...kbk..', '..kbk...', '.kkk....', 'kk......'],
+  'icon-ball': ['..kkkk..', '.kwwwwk.', 'kwrwwrwk', 'kwrwwrwk', 'kwrwwrwk', 'kwrwwrwk', '.kwwwwk.', '..kkkk..'],
+  'icon-kit': ['..kkkk..', '.kk..kk.', 'kwwwwwwk', 'kwwrrwwk', 'kwrrrrwk', 'kwwrrwwk', 'kwwwwwwk', 'kkkkkkkk'],
+  'icon-glove': ['.k.k.k..', 'kbkbkbk.', 'kbbbbbk.', 'kbbbbbkk', 'kbbbbbkb', 'kbbbbbbk', '.kbbbbk.', '..kkkk..'],
+  'icon-mitt': ['..kkkk..', '.kbbbbk.', 'kbboobbk', 'kboooobk', 'kbboobbk', 'kbbbbbbk', '.kbbbbk.', '..kkkk..'],
+  'icon-cleats': ['........', '.kkk....', '.kPPk...', '.kPPk...', '.kPPPkk.', 'kPPPPPPk', 'kkkkkkkk', '.k.k.k..'],
+  'icon-cap': ['........', '..kkkk..', '.krrrrk.', 'krrwrrrk', 'krrrrrrk', 'kkkkkkkk', '....kkkk', '........'],
   cursor: [
     'kk......',
     'kwkk....',

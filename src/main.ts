@@ -5,6 +5,7 @@ import { controls } from './input/Controls';
 import { BattleScene } from './scenes/BattleScene';
 import { BootScene } from './scenes/BootScene';
 import { DungeonScene } from './scenes/DungeonScene';
+import { EquipScene } from './scenes/EquipScene';
 import { TitleScene } from './scenes/TitleScene';
 import { TouchScene } from './scenes/TouchScene';
 import { TownScene } from './scenes/TownScene';
@@ -29,7 +30,7 @@ async function start(): Promise<void> {
     scale: { mode: Phaser.Scale.FIT, autoCenter: Phaser.Scale.CENTER_BOTH },
     input: { activePointers: 3 },
     // Touch must stay last so its overlay draws above every other scene.
-    scene: [BootScene, TitleScene, TownScene, WorldMapScene, DungeonScene, BattleScene, TouchScene],
+    scene: [BootScene, TitleScene, TownScene, WorldMapScene, DungeonScene, BattleScene, EquipScene, TouchScene],
   });
 
   game.events.on(Phaser.Core.Events.PRE_STEP, () => controls.update());

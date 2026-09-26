@@ -46,23 +46,45 @@ export interface MenuItem {
   enabled?: boolean;
   /** Right-aligned detail, e.g. an MP cost or item count. */
   right?: string;
+  color?: string;
+  rightColor?: string;
+  /** Texture key of an 8x8 icon drawn before the label. */
+  icon?: string;
 }
 
 export interface MenuOptions {
   width: number;
   rowH?: number;
+  /** Rows visible at once; longer lists scroll. */
+  maxRows?: number;
+  startIndex?: number;
   onSelect: (index: number) => void;
   onCancel?: () => void;
+  /** Called whenever the highlighted row changes (and once at start). */
+  onMove?: (index: number) => void;
   /** Pin to the screen (for menus over a scrolling map) and draw at this depth. */
   fixedDepth?: number;
 }
 
-/** A vertical menu driven by any input device, with rows that can also be tapped. */
+interface MenuRow {
+  label: Phaser.GameObjects.Text;
+  right: Phaser.GameObjects.Text;
+  icon: Phaser.GameObjects.Image;
+  zone: Phaser.GameObjects.Zone;
+}
+
+/** A vertical, optionally scrolling menu driven by any input device; rows can also be tapped. */
 export class Menu implements Widget {
   index = 0;
+  private top = 0;
+  private rows: MenuRow[] = [];
   private objects: (Phaser.GameObjects.Text | Phaser.GameObjects.Zone | Phaser.GameObjects.Image)[] = [];
   private cursor: Phaser.GameObjects.Image;
+  private upArrow: Phaser.GameObjects.Text;
+  private downArrow: Phaser.GameObjects.Text;
   private rowH: number;
+  private visible: number;
+  private hasIcons: boolean;
 
   constructor(
     scene: Phaser.Scene,
@@ -72,25 +94,34 @@ export class Menu implements Widget {
     private opts: MenuOptions,
   ) {
     this.rowH = opts.rowH ?? 14;
-    items.forEach((it, i) => {
-      const rowY = y + i * this.rowH;
-      const color = it.enabled === false ? GRAY : WHITE;
-      this.objects.push(makeText(scene, x + 12, rowY, it.label, color));
-      if (it.right) this.objects.push(makeText(scene, x + opts.width - 4, rowY, it.right, color).setOrigin(1, 0));
-      const zone = scene.add.zone(x, rowY - 3, opts.width, this.rowH).setOrigin(0).setInteractive();
-      zone.on('pointerdown', () => {
-        this.index = i;
-        this.placeCursor();
+    this.visible = Math.min(items.length, opts.maxRows ?? items.length);
+    this.hasIcons = items.some((it) => it.icon);
+    const labelX = x + 12 + (this.hasIcons ? 11 : 0);
+    for (let r = 0; r < this.visible; r++) {
+      const rowY = y + r * this.rowH;
+      const row: MenuRow = {
+        label: makeText(scene, labelX, rowY, ''),
+        right: makeText(scene, x + opts.width - 4, rowY, '').setOrigin(1, 0),
+        icon: scene.add.image(x + 12, rowY, 'cursor').setOrigin(0, 0),
+        zone: scene.add.zone(x, rowY - 3, opts.width, this.rowH).setOrigin(0).setInteractive(),
+      };
+      row.zone.on('pointerdown', () => {
+        this.index = this.top + r;
+        this.refresh();
         this.select();
       });
-      this.objects.push(zone);
-    });
+      this.rows.push(row);
+      this.objects.push(row.label, row.right, row.icon, row.zone);
+    }
     this.cursor = scene.add.image(x + 1, 0, 'cursor').setOrigin(0, 0);
-    this.objects.push(this.cursor);
+    this.upArrow = makeText(scene, x + opts.width - 4, y - 9, '^', YELLOW).setOrigin(1, 0);
+    this.downArrow = makeText(scene, x + opts.width - 4, y + this.visible * this.rowH - 4, 'v', YELLOW).setOrigin(1, 0);
+    this.objects.push(this.cursor, this.upArrow, this.downArrow);
     if (opts.fixedDepth !== undefined) {
       for (const o of this.objects) o.setScrollFactor(0).setDepth(opts.fixedDepth);
     }
-    this.placeCursor();
+    this.index = Math.min(opts.startIndex ?? 0, items.length - 1);
+    this.refresh();
   }
 
   update(c: Controls): void {
@@ -105,7 +136,7 @@ export class Menu implements Widget {
 
   setIndex(i: number): void {
     this.index = i;
-    this.placeCursor();
+    this.refresh();
   }
 
   destroy(): void {
@@ -116,11 +147,24 @@ export class Menu implements Widget {
   private move(delta: number): void {
     const n = this.items.length;
     this.index = (this.index + delta + n) % n;
-    this.placeCursor();
+    this.refresh();
   }
 
-  private placeCursor(): void {
-    this.cursor.setPosition(this.x + 1, this.y + this.index * this.rowH);
+  private refresh(): void {
+    if (this.index < this.top) this.top = this.index;
+    if (this.index >= this.top + this.visible) this.top = this.index - this.visible + 1;
+    this.rows.forEach((row, r) => {
+      const it = this.items[this.top + r];
+      const color = it.enabled === false ? GRAY : (it.color ?? WHITE);
+      row.label.setText(it.label).setColor(color);
+      row.right.setText(it.right ?? '').setColor(it.enabled === false ? GRAY : (it.rightColor ?? color));
+      row.icon.setVisible(!!it.icon);
+      if (it.icon) row.icon.setTexture(it.icon);
+    });
+    this.cursor.setPosition(this.x + 1, this.y + (this.index - this.top) * this.rowH);
+    this.upArrow.setVisible(this.top > 0);
+    this.downArrow.setVisible(this.top + this.visible < this.items.length);
+    this.opts.onMove?.(this.index);
   }
 
   private select(): void {
@@ -135,7 +179,7 @@ export interface WidgetHost {
   widget: Widget | null;
 }
 
-interface Rect {
+export interface Rect {
   x: number;
   y: number;
   w: number;
@@ -149,6 +193,7 @@ export function askMenu(
   frame: Rect,
   items: MenuItem[],
   cancellable = false,
+  extra: Pick<MenuOptions, 'maxRows' | 'onMove' | 'startIndex'> = {},
 ): Promise<number> {
   return new Promise((resolve) => {
     const win = scene.add.graphics();
@@ -164,6 +209,7 @@ export function askMenu(
       rowH: 13,
       onSelect: done,
       onCancel: cancellable ? () => done(-1) : undefined,
+      ...extra,
     });
     host.widget = menu;
   });

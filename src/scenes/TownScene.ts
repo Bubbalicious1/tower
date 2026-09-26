@@ -1,6 +1,9 @@
 import Phaser from 'phaser';
+import { GEAR, RARITY_COLOR, SLOTS, type GearDef } from '../data/equipment';
+import { CONSUMABLE_IDS, CONSUMABLES } from '../data/items';
 import { SKILLS } from '../data/skills';
-import { DRINK_PRICE, RANKS, TOWNS } from '../data/world';
+import { RANKS, TOWNS } from '../data/world';
+import { BAG_SIZE, classCanUse, effectiveStats, gearOf, itemName, makeItem, sellPrice } from '../game/equipment';
 import { promote, restore, winsToNextRank } from '../game/party';
 import { enterDungeon, getState, saveGame } from '../game/state';
 import { controls } from '../input/Controls';
@@ -58,17 +61,20 @@ export class TownScene extends Phaser.Scene implements WidgetHost {
 
   private async run(): Promise<void> {
     if (this.message) await this.say(this.message);
+    let last = 0;
     for (;;) {
       const s = getState();
       const town = TOWNS[s.town];
       const cleared = s.basesFound > s.town;
-      const choice = await askMenu(this, this, { x: 4, y: 120, w: 204, h: 80 }, [
+      const choice = await askMenu(this, this, { x: 4, y: 116, w: 204, h: 88 }, [
         { label: town.dungeon, right: cleared ? 'CLEAR' : '' },
         { label: 'Inn', right: `${town.innCost}G` },
         { label: 'Shop' },
+        { label: 'Equipment' },
         { label: 'Old-Timer' },
         { label: 'World Map' },
-      ]);
+      ], false, { startIndex: last });
+      last = choice;
       if (choice === 0) {
         enterDungeon();
         this.leave('Dungeon');
@@ -76,7 +82,8 @@ export class TownScene extends Phaser.Scene implements WidgetHost {
       }
       if (choice === 1) await this.inn();
       else if (choice === 2) await this.shop();
-      else if (choice === 3) await this.oldTimer();
+      else if (choice === 3) await this.openEquipment();
+      else if (choice === 4) await this.oldTimer();
       else {
         this.leave('WorldMap');
         return;
@@ -106,19 +113,140 @@ export class TownScene extends Phaser.Scene implements WidgetHost {
     await this.say('The team rests up. HP and MP fully restored!');
   }
 
+  private async openEquipment(): Promise<void> {
+    this.scene.launch('Equip', { from: 'Town' });
+    this.scene.pause();
+    await new Promise((r) => this.events.once('resume', r));
+    this.refreshPanels();
+  }
+
   private async shop(): Promise<void> {
     for (;;) {
-      const s = getState();
+      this.refreshPanels();
       const choice = await askMenu(
         this,
         this,
-        { x: 4, y: 120, w: 204, h: 36 },
-        [{ label: `Sports Drink x${s.items.drink}`, right: `${DRINK_PRICE}G`, enabled: s.gold >= DRINK_PRICE }, { label: 'Leave' }],
+        { x: 4, y: 116, w: 204, h: 16 + 4 * 13 },
+        [{ label: 'Buy gear' }, { label: 'Buy items' }, { label: 'Sell gear' }, { label: 'Leave' }],
         true,
       );
-      if (choice !== 0) return;
-      s.gold -= DRINK_PRICE;
-      s.items.drink++;
+      if (choice === 0) await this.buyGear();
+      else if (choice === 1) await this.buyItems();
+      else if (choice === 2) await this.sellGear();
+      else return;
+    }
+  }
+
+  /** Who in the party could use a piece of gear, and how it compares to what they wear. */
+  private gearInfo(def: GearDef): string {
+    const s = getState();
+    const parts = s.party
+      .filter((m) => classCanUse(m, def))
+      .map((m) => {
+        const cur = m.equip[def.slot];
+        const k = (Object.keys(def.stats) as (keyof typeof def.stats)[])[0];
+        const delta = (def.stats[k] ?? 0) - (cur?.stats[k] ?? 0);
+        return `${m.name} ${delta >= 0 ? '+' : ''}${delta}`;
+      });
+    const rank = def.minRank ? `  Needs ${RANKS[def.minRank].name}` : '';
+    return `${parts.join('  ') || 'Nobody can use this.'}${rank}`;
+  }
+
+  private async buyGear(): Promise<void> {
+    const s = getState();
+    const tier = s.town + 1;
+    const stock = Object.values(GEAR)
+      .filter((g) => !g.legendary && (g.tier === tier || g.tier === tier - 1))
+      .filter((g) => s.party.some((m) => classCanUse(m, g)))
+      .sort((a, b) => SLOTS.indexOf(a.slot) - SLOTS.indexOf(b.slot) || b.tier - a.tier);
+    const info = makeText(this, 12, 214, '').setWordWrapWidth(this.scale.width - 24).setLineSpacing(4);
+    const infoWin = this.add.graphics();
+    drawWindow(infoWin, 4, 206, this.scale.width - 8, 60);
+    info.setDepth(1);
+    let index = 0;
+    for (;;) {
+      const choice = await askMenu(
+        this,
+        this,
+        { x: 4, y: 116, w: this.scale.width - 8, h: 16 + 6 * 13 },
+        stock.map((g) => ({
+          label: g.name,
+          icon: `icon-${g.icon}`,
+          right: `${g.price}G`,
+          enabled: s.gold >= g.price && s.bag.length < BAG_SIZE,
+        })),
+        true,
+        { maxRows: 6, startIndex: index, onMove: (i) => info.setText(this.gearInfo(stock[i])) },
+      );
+      if (choice < 0) break;
+      index = choice;
+      const def = stock[choice];
+      s.gold -= def.price;
+      s.bag.push(makeItem(s, def.id));
+      saveGame();
+      this.refreshPanels();
+    }
+    info.destroy();
+    infoWin.destroy();
+  }
+
+  private async buyItems(): Promise<void> {
+    const s = getState();
+    const stock = CONSUMABLE_IDS.filter((id) => CONSUMABLES[id].minTown <= s.town);
+    let index = 0;
+    for (;;) {
+      const choice = await askMenu(
+        this,
+        this,
+        { x: 4, y: 116, w: this.scale.width - 8, h: 16 + stock.length * 13 },
+        stock.map((id) => ({
+          label: `${CONSUMABLES[id].name} x${s.items[id]}`,
+          right: `${CONSUMABLES[id].price}G`,
+          enabled: s.gold >= CONSUMABLES[id].price,
+        })),
+        true,
+        { startIndex: index },
+      );
+      if (choice < 0) return;
+      index = choice;
+      s.gold -= CONSUMABLES[stock[choice]].price;
+      s.items[stock[choice]]++;
+      saveGame();
+      this.refreshPanels();
+    }
+  }
+
+  private async sellGear(): Promise<void> {
+    const s = getState();
+    let index = 0;
+    for (;;) {
+      if (s.bag.length === 0) {
+        await this.say('Shopkeeper: Your bag is empty. Equipped gear has to come off before I can buy it.');
+        return;
+      }
+      const choice = await askMenu(
+        this,
+        this,
+        { x: 4, y: 116, w: this.scale.width - 8, h: 16 + 6 * 13 },
+        s.bag.map((it) => ({
+          label: itemName(it),
+          icon: `icon-${gearOf(it).icon}`,
+          color: RARITY_COLOR[it.rarity],
+          right: `${sellPrice(it)}G`,
+        })),
+        true,
+        { maxRows: 6, startIndex: Math.min(index, s.bag.length - 1) },
+      );
+      if (choice < 0) return;
+      index = choice;
+      const item = s.bag[choice];
+      if (item.rarity === 'legendary') {
+        await this.say(`Sell ${itemName(item)}? It's one of a kind...`);
+        const sure = await askMenu(this, this, { x: 4, y: 116, w: 204, h: 36 }, [{ label: 'Keep it' }, { label: 'Sell' }], true);
+        if (sure !== 1) continue;
+      }
+      s.bag.splice(choice, 1);
+      s.gold += sellPrice(item);
       saveGame();
       this.refreshPanels();
     }
@@ -201,12 +329,12 @@ export class TownScene extends Phaser.Scene implements WidgetHost {
     text(W - 116, 32, RANKS[s.party[0].rank].name, GRAY);
 
     const x0 = 212;
-    drawWindow(g, x0, 120, W - x0 - 4, 80);
+    drawWindow(g, x0, 116, W - x0 - 4, 88);
     s.party.forEach((m, i) => {
-      const y = 128 + i * 16;
+      const y = 126 + i * 18;
       text(x0 + 8, y, m.name);
       text(x0 + 60, y, `Lv${m.level}`, GRAY);
-      text(x0 + 100, y, `${m.hp}/${m.stats.maxHp}`);
+      text(x0 + 100, y, `${m.hp}/${effectiveStats(m).maxHp}`);
     });
   }
 }

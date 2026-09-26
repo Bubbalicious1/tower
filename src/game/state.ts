@@ -1,14 +1,21 @@
 import type { ClassId } from '../data/classes';
+import { STARTER_WEAPON, type Item } from '../data/equipment';
+import { CONSUMABLE_IDS, type ConsumableId } from '../data/items';
 import { FLOORS_PER_DUNGEON, TOWNS } from '../data/world';
 import type { Point } from '../dungeon/generate';
 import { newSeed } from '../rng';
+import { makeItem, type Inventory } from './equipment';
 import { createMember, statsAt, type Member } from './party';
 
-export interface SaveData {
-  version: 2;
+export interface SaveData extends Inventory {
+  version: 3;
   party: Member[];
   gold: number;
-  items: { drink: number };
+  /** Consumable counts. */
+  items: Record<ConsumableId, number>;
+  /** Unequipped gear (capped at BAG_SIZE). */
+  bag: Item[];
+  nextItemId: number;
   /** Battles won in total; the Old-Timer promotes the team at set win counts. */
   wins: number;
   /** Bases recovered (0-4). Town N is unlocked once N bases have been found. */
@@ -45,12 +52,22 @@ export function getState(): SaveData {
   return current;
 }
 
+function emptyItems(): Record<ConsumableId, number> {
+  return Object.fromEntries(CONSUMABLE_IDS.map((id) => [id, 0])) as Record<ConsumableId, number>;
+}
+
+function giveStarterWeapons(s: SaveData): void {
+  for (const m of s.party) if (!m.equip.weapon) m.equip.weapon = makeItem(s, STARTER_WEAPON[m.classId]);
+}
+
 export function newGame(): SaveData {
   current = {
-    version: 2,
+    version: 3,
     party: DEFAULT_PARTY.map(([name, cls]) => createMember(name, cls)),
     gold: 0,
-    items: { drink: 3 },
+    items: { ...emptyItems(), drink: 3, salts: 1 },
+    bag: [],
+    nextItemId: 1,
     wins: 0,
     basesFound: 0,
     town: 0,
@@ -62,17 +79,31 @@ export function newGame(): SaveData {
     opened: [],
     encounters: 0,
   };
+  giveStarterWeapons(current);
   saveGame();
   return current;
 }
 
 /** Upgrade older saves in place so players never lose progress to a format change. */
 export function migrate(data: { version: number } & Record<string, unknown>): SaveData | null {
-  if (data.version === 2) return data as unknown as SaveData;
+  if (data.version === 3) return data as unknown as SaveData;
+  if (data.version === 2) {
+    const v2 = data as unknown as Omit<SaveData, 'version' | 'items' | 'bag' | 'nextItemId'> & { items: Record<string, number> };
+    const s: SaveData = {
+      ...v2,
+      version: 3,
+      items: { ...emptyItems(), ...v2.items },
+      bag: [],
+      nextItemId: 1,
+      party: v2.party.map((m) => ({ ...m, equip: {} })),
+    };
+    giveStarterWeapons(s);
+    return s;
+  }
   if (data.version !== 1) return null;
   const v1 = data as unknown as Omit<SaveData, 'version' | 'wins' | 'basesFound' | 'town' | 'inDungeon' | 'floor'>;
   const party = v1.party.map((m) => ({ ...m, rank: 0, stats: statsAt(m.classId, m.level, 0) }));
-  return {
+  return migrate({
     ...v1,
     version: 2,
     party,
@@ -85,7 +116,7 @@ export function migrate(data: { version: number } & Record<string, unknown>): Sa
     defeated: [],
     opened: [],
     encounters: 0,
-  };
+  });
 }
 
 export function loadGame(): SaveData | null {

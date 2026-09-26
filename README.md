@@ -35,9 +35,9 @@ sideways.
 
 ## Code map
 
-- `src/scenes/` — Title, Town, WorldMap, Dungeon (field), Battle, Touch overlay
+- `src/scenes/` — Title, Town, WorldMap, Dungeon (field), Battle, Equip, Touch overlay
 - `src/dungeon/generate.ts` — seeded floor generator
-- `src/game/` — combat math, party/levelling, save state
-- `src/data/` — classes, skills, enemies, towns and ranks (`world.ts`)
+- `src/game/` — combat math, party/levelling, equipment/loot, save state
+- `src/data/` — classes, skills, enemies, gear, consumables, towns and ranks
 - `src/input/Controls.ts` — keyboard/gamepad/touch → abstract actions
 - `src/art-data.ts` — placeholder pixel art as text maps

@@ -47,8 +47,8 @@ export interface Hit {
 
 const variance = (rng: Rng) => 0.9 + rng() * 0.2;
 
-export function physDamage(a: Fighter, t: Fighter, power: number, rng: Rng): Hit {
-  const crit = rng() < 1 / 16;
+export function physDamage(a: Fighter, t: Fighter, power: number, rng: Rng, critChance = 1 / 16): Hit {
+  const crit = rng() < critChance;
   let dmg = (a.atk * 2 * power - t.def) * variance(rng);
   if (crit) dmg *= 1.5;
   if (t.defending) dmg /= 2;

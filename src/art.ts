@@ -91,5 +91,6 @@ export function generateArt(scene: Phaser.Scene): void {
   spriteTexture(scene, 'chest', SPRITES.chest);
   spriteTexture(scene, 'chest-open', SPRITES.chestOpen);
   spriteTexture(scene, 'cursor', SPRITES.cursor);
+  for (const key of Object.keys(SPRITES)) if (key.startsWith('icon-')) spriteTexture(scene, key, SPRITES[key]);
   canvasTexture(scene, 'tiles', TILE * 5, TILE, drawTiles);
 }

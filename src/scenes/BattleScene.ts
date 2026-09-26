@@ -1,5 +1,7 @@
 import Phaser from 'phaser';
 import { ENEMIES, scaledStats, spriteKey, type EnemyDef } from '../data/enemies';
+import { RARITY_COLOR, type Special } from '../data/equipment';
+import { CONSUMABLE_IDS, CONSUMABLES, type ConsumableId } from '../data/items';
 import { SKILLS, type SkillKind } from '../data/skills';
 import {
   applyDamage,
@@ -14,6 +16,7 @@ import {
   type Fighter,
   type Hit,
 } from '../game/combat';
+import { effectiveStats, itemName, rollLoot, specialsOf } from '../game/equipment';
 import { gainXp, skillsFor, type Member } from '../game/party';
 import { getState } from '../game/state';
 import { controls } from '../input/Controls';
@@ -40,6 +43,9 @@ export interface BattleResult {
 interface PartyFighter extends Fighter {
   side: 'party';
   member: Member;
+  specials: Set<Special>;
+  /** Pine Tar only works once per battle per player. */
+  buffed: boolean;
 }
 
 interface EnemyFighter extends Fighter {
@@ -53,11 +59,10 @@ type BF = PartyFighter | EnemyFighter;
 type BattleAction =
   | { kind: 'attack'; actor: BF; target: BF }
   | { kind: 'skill'; actor: BF; name: string; skillKind: SkillKind; power: number; mp: number; target: BF }
-  | { kind: 'item'; actor: BF; target: BF }
+  | { kind: 'item'; actor: BF; item: ConsumableId; target: PartyFighter | null }
   | { kind: 'defend'; actor: BF }
   | { kind: 'flee'; actor: BF };
 
-const DRINK_HEAL = 40;
 const BOTTOM_Y = 186;
 const CMD_W = 114;
 const STATUS_X = 122;
@@ -101,21 +106,26 @@ export class BattleScene extends Phaser.Scene {
     this.frames = this.add.graphics().setDepth(-5);
 
     const s = getState();
-    this.party = s.party.map((m, i) => ({
-      key: `p${i}`,
-      name: m.name,
-      side: 'party',
-      hp: m.hp,
-      maxHp: m.stats.maxHp,
-      mp: m.mp,
-      maxMp: m.stats.maxMp,
-      atk: m.stats.atk,
-      def: m.stats.def,
-      mag: m.stats.mag,
-      spd: m.stats.spd,
-      defending: false,
-      member: m,
-    }));
+    this.party = s.party.map((m, i) => {
+      const st = effectiveStats(m);
+      return {
+        key: `p${i}`,
+        name: m.name,
+        side: 'party',
+        hp: Math.min(m.hp, st.maxHp),
+        maxHp: st.maxHp,
+        mp: Math.min(m.mp, st.maxMp),
+        maxMp: st.maxMp,
+        atk: st.atk,
+        def: st.def,
+        mag: st.mag,
+        spd: st.spd,
+        defending: false,
+        member: m,
+        specials: specialsOf(m),
+        buffed: false,
+      };
+    });
 
     const counts = new Map<string, number>();
     this.setup.group.forEach((id) => counts.set(id, (counts.get(id) ?? 0) + 1));
@@ -190,6 +200,7 @@ export class BattleScene extends Phaser.Scene {
 
     for (let round = 1; ; round++) {
       this.party.forEach((p) => (p.defending = false));
+      if (round > 1) await this.regenerate();
       const actions: BattleAction[] = [];
       if (!(round === 1 && first === 'enemy')) actions.push(...(await this.collectCommands()));
       if (!(round === 1 && first === 'party')) {
@@ -199,10 +210,13 @@ export class BattleScene extends Phaser.Scene {
       for (const a of actions) if (a.kind === 'defend') a.actor.defending = true;
 
       const byActor = new Map(actions.map((a) => [a.actor.key, a]));
-      const order = turnOrder(
+      // Gear with First Strike always goes before everyone else.
+      const rolled = turnOrder(
         actions.map((a) => a.actor),
         this.rng,
       );
+      const firstStrike = (f: BF) => f.side === 'party' && f.specials.has('firstStrike');
+      const order = [...rolled.filter(firstStrike), ...rolled.filter((f) => !firstStrike(f))];
       this.showOrder(order);
       for (const actor of order) {
         if (!isAlive(actor)) continue;
@@ -239,12 +253,13 @@ export class BattleScene extends Phaser.Scene {
   /** One party member's command. Returns 'back' to redo the previous member, null to re-ask. */
   private async chooseAction(actor: PartyFighter, chosen: BattleAction[], canGoBack: boolean): Promise<BattleAction | 'back' | null> {
     this.setMessage(`${actor.name}'s turn`);
-    const drinks = getState().items.drink - chosen.filter((a) => a.kind === 'item').length;
+    const stock = this.itemStock(chosen);
+    const anyItems = CONSUMABLE_IDS.some((id) => stock[id] > 0);
     const choice = await this.menu(
       8,
       BOTTOM_Y + 8,
       CMD_W - 8,
-      [{ label: 'Attack' }, { label: 'Skill' }, { label: 'Item', right: String(drinks), enabled: drinks > 0 }, { label: 'Defend' }, { label: 'Flee', enabled: !this.setup.boss }],
+      [{ label: 'Attack' }, { label: 'Skill' }, { label: 'Item', enabled: anyItems }, { label: 'Defend' }, { label: 'Flee', enabled: !this.setup.boss }],
       canGoBack,
     );
     switch (choice) {
@@ -270,8 +285,25 @@ export class BattleScene extends Phaser.Scene {
         return target && { kind: 'skill', actor, name: sk.name, skillKind: sk.kind, power: sk.power, mp: sk.mp, target };
       }
       case 2: {
-        const target = await this.pickTarget('ally');
-        return target && { kind: 'item', actor, target };
+        const ids = CONSUMABLE_IDS.filter((id) => stock[id] > 0);
+        const ii = await this.menu(
+          8,
+          BOTTOM_Y + 8,
+          192,
+          ids.map((id) => {
+            const c = CONSUMABLES[id];
+            const usable = c.target !== 'down' || this.party.some((p) => !isAlive(p));
+            return { label: c.name, right: `x${stock[id]}`, enabled: usable };
+          }),
+          true,
+          { x: 4, y: BOTTOM_Y, w: 208, h: 78 },
+        );
+        if (ii < 0) return null;
+        const item = ids[ii];
+        const kind = CONSUMABLES[item].target;
+        if (kind === 'party') return { kind: 'item', actor, item, target: null };
+        const target = (await this.pickTarget(kind === 'down' ? 'down' : 'ally')) as PartyFighter | null;
+        return target && { kind: 'item', actor, item, target };
       }
       case 3:
         return { kind: 'defend', actor };
@@ -302,24 +334,14 @@ export class BattleScene extends Phaser.Scene {
         }
         await this.say(`${actor.name} couldn't get away!`);
         return;
-      case 'item': {
-        const s = getState();
-        const target = isAlive(a.target) ? a.target : this.lowestAlly();
-        if (s.items.drink <= 0 || !target) {
-          await this.say('Out of Sports Drinks!');
-          return;
-        }
-        s.items.drink--;
-        const healed = applyHeal(target, DRINK_HEAL);
-        this.popAt(target, `+${healed}`, GREEN);
-        await this.say(`${actor.name} tosses ${target.name} a Sports Drink. +${healed} HP`);
+      case 'item':
+        await this.useItem(actor, a.item, a.target);
         return;
-      }
       case 'attack': {
         const target = this.resolve(a.target);
         if (!target) return;
         const verb = actor.side === 'party' ? 'swings' : 'attacks';
-        await this.strike(target, physDamage(actor, target, 1, this.rng), `${actor.name} ${verb}!`);
+        await this.strike(target, physDamage(actor, target, 1, this.rng, this.critChance(actor)), `${actor.name} ${verb}!`);
         return;
       }
       case 'skill': {
@@ -331,7 +353,8 @@ export class BattleScene extends Phaser.Scene {
         if (a.skillKind === 'heal') {
           const target = isAlive(a.target) ? a.target : this.lowestAlly();
           if (!target) return;
-          const healed = applyHeal(target, healAmount(actor, a.power, this.rng));
+          const boost = actor.side === 'party' && actor.specials.has('healUp') ? 1.5 : 1;
+          const healed = applyHeal(target, Math.round(healAmount(actor, a.power, this.rng) * boost));
           this.popAt(target, `+${healed}`, GREEN);
           await this.say(`${actor.name} uses ${a.name}! ${target.name} +${healed} HP`);
           return;
@@ -339,10 +362,88 @@ export class BattleScene extends Phaser.Scene {
         const target = this.resolve(a.target);
         if (!target) return;
         const hit =
-          a.skillKind === 'phys' ? physDamage(actor, target, a.power, this.rng) : magDamage(actor, target, a.power, this.rng);
+          a.skillKind === 'phys'
+            ? physDamage(actor, target, a.power, this.rng, this.critChance(actor))
+            : magDamage(actor, target, a.power, this.rng);
+        if (a.skillKind === 'mag' && target.side === 'party' && target.specials.has('magicGuard')) {
+          hit.amount = Math.max(1, Math.round(hit.amount / 2));
+        }
         await this.strike(target, hit, `${actor.name} uses ${a.name}!`);
       }
     }
+  }
+
+  /** Consumables left, minus ones already promised to earlier party members this round. */
+  private itemStock(chosen: BattleAction[]): Record<ConsumableId, number> {
+    const stock = { ...getState().items };
+    for (const a of chosen) if (a.kind === 'item') stock[a.item]--;
+    return stock;
+  }
+
+  private critChance(f: BF): number {
+    return f.side === 'party' && f.specials.has('critUp') ? 0.25 : 1 / 16;
+  }
+
+  private async useItem(actor: BF, id: ConsumableId, chosen: PartyFighter | null): Promise<void> {
+    const s = getState();
+    const def = CONSUMABLES[id];
+    if (s.items[id] <= 0) {
+      await this.say(`Out of ${def.name}!`);
+      return;
+    }
+    const effect = def.effect;
+    if (effect.kind === 'revive') {
+      if (!chosen || isAlive(chosen)) {
+        await this.say(`${actor.name} holds out the ${def.name}... no one needs it.`);
+        return;
+      }
+      s.items[id]--;
+      chosen.hp = Math.max(1, Math.round(chosen.maxHp * effect.pct));
+      this.popAt(chosen, `+${chosen.hp}`, GREEN);
+      await this.say(`${actor.name} uses ${def.name}. ${chosen.name} is back in the game!`);
+      return;
+    }
+    if (effect.kind === 'healAll') {
+      s.items[id]--;
+      for (const p of this.party.filter(isAlive)) this.popAt(p, `+${applyHeal(p, effect.amount)}`, GREEN);
+      await this.say(`${actor.name} breaks out the ${def.name}. Everyone recovers!`);
+      return;
+    }
+    const target = chosen && isAlive(chosen) ? chosen : this.lowestAlly();
+    if (!target) return;
+    s.items[id]--;
+    if (effect.kind === 'heal') {
+      const healed = applyHeal(target, effect.amount);
+      this.popAt(target, `+${healed}`, GREEN);
+      await this.say(`${actor.name} tosses ${target.name} a ${def.name}. +${healed} HP`);
+    } else if (effect.kind === 'mp') {
+      const before = target.mp;
+      target.mp = Math.min(target.maxMp, target.mp + effect.amount);
+      this.popAt(target, `+${target.mp - before}MP`, GREEN);
+      await this.say(`${target.name} munches ${def.name}. +${target.mp - before} MP`);
+    } else if (effect.kind === 'atkUp') {
+      if (!target.buffed) {
+        target.atk = Math.round(target.atk * effect.mult);
+        target.buffed = true;
+      }
+      await this.say(`${target.name} grips the ${def.name}. ATK up!`);
+    }
+  }
+
+  /** Start-of-round effects from gear: MP and HP regeneration. */
+  private async regenerate(): Promise<void> {
+    let any = false;
+    for (const p of this.party.filter(isAlive)) {
+      if (p.specials.has('mpRegen') && p.mp < p.maxMp) {
+        p.mp = Math.min(p.maxMp, p.mp + 3);
+        any = true;
+      }
+      if (p.specials.has('hpRegen') && p.hp < p.maxHp) {
+        this.popAt(p, `+${applyHeal(p, Math.ceil(p.maxHp * 0.05))}`, GREEN);
+        any = true;
+      }
+    }
+    if (any) this.refreshStatus();
   }
 
   private resolve(target: BF): BF | undefined {
@@ -379,7 +480,9 @@ export class BattleScene extends Phaser.Scene {
   private async victory(): Promise<void> {
     const s = getState();
     const xp = this.foes.reduce((t, f) => t + Math.round(f.enemy.xp * (1 + 0.1 * (this.setup.depth - f.enemy.minDepth))), 0);
-    const gold = this.foes.reduce((t, f) => t + f.enemy.gold, 0);
+    const baseGold = this.foes.reduce((t, f) => t + f.enemy.gold, 0);
+    const bonus = this.party.some((p) => p.specials.has('goldBonus'));
+    const gold = bonus ? Math.round(baseGold * 1.25) : baseGold;
     const standing = this.party.filter(isAlive);
     this.highlight(null);
     this.writeBack();
@@ -392,6 +495,14 @@ export class BattleScene extends Phaser.Scene {
       if (gainXp(p.member, share) > 0) await this.say(`${p.name} reached level ${p.member.level}!`);
     }
     this.syncFromMembers();
+    if (this.setup.boss) {
+      // Bosses always drop Rare-or-better gear; it goes in the bag even when full.
+      const loot = rollLoot(this.rng, s, s.town, 3, true);
+      s.bag.push(loot);
+      this.setMessage(`The boss dropped ${itemName(loot)}!`);
+      this.message.setColor(RARITY_COLOR[loot.rarity]);
+      await this.wait(1200);
+    }
     await this.waitConfirm();
     this.finish('victory', false);
   }
@@ -414,9 +525,10 @@ export class BattleScene extends Phaser.Scene {
   private syncFromMembers(): void {
     for (const p of this.party) {
       p.hp = p.member.hp;
-      p.maxHp = p.member.stats.maxHp;
+      const st = effectiveStats(p.member);
+      p.maxHp = st.maxHp;
       p.mp = p.member.mp;
-      p.maxMp = p.member.stats.maxMp;
+      p.maxMp = st.maxMp;
     }
     this.refreshStatus();
   }
@@ -461,10 +573,11 @@ export class BattleScene extends Phaser.Scene {
     });
   }
 
-  private pickTarget(side: 'enemy' | 'ally'): Promise<BF | null> {
+  /** 'down' targets knocked-out party members (for revives). */
+  private pickTarget(side: 'enemy' | 'ally' | 'down'): Promise<BF | null> {
     return new Promise((resolve) => {
       const pool: readonly BF[] = side === 'enemy' ? this.foes : this.party;
-      const alive = () => pool.filter(isAlive);
+      const alive = () => pool.filter((f) => (side === 'down' ? !isAlive(f) : isAlive(f)));
       let idx = side === 'ally' ? Math.max(0, alive().indexOf(this.lowestAlly()!)) : 0;
       const cursor = this.add.image(0, 0, 'cursor').setOrigin(0, 0.5).setDepth(20);
       const place = () => {
@@ -500,7 +613,7 @@ export class BattleScene extends Phaser.Scene {
         },
       };
       this.tapTarget = (f) => {
-        if (pool.includes(f) && isAlive(f)) finish(f);
+        if (alive().includes(f)) finish(f);
       };
       place();
     });
@@ -536,7 +649,7 @@ export class BattleScene extends Phaser.Scene {
   // ---------------------------------------------------------------- drawing
 
   private setMessage(text: string): void {
-    this.message.setText(text);
+    this.message.setText(text).setColor(WHITE);
   }
 
   private showOrder(order: BF[]): void {
